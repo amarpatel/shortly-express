@@ -9,7 +9,11 @@ var Links = require('./app/collections/links');
 var Link = require('./app/models/link');
 var Click = require('./app/models/click');
 
+
 var app = express();
+
+app.use(express.cookieParser());
+app.use(express.session({ secret: 'keyboard cat', cookie: { maxAge: 3000 }}))
 
 app.configure(function() {
   app.set('views', __dirname + '/views');
@@ -20,20 +24,50 @@ app.configure(function() {
 });
 
 app.get('/', function(req, res) {
-  res.render('index');
+  // res.redirect('login');
+  res.render('login');
+});
+
+app.get('/users', function(req, res) {
+  Users.reset().fetch().then(function(users) {
+    res.send(200, users.models);
+  })
+});
+
+app.get('/login', function (req, res) {
+  res.render('login');
+});
+
+app.get('/signup', function (req, res) {
+  res.render('signup');
 });
 
 app.get('/create', function(req, res) {
+  if (!req.session.auth) {
+    res.redirect('/login');
+  }
   res.render('index');
 });
 
 app.get('/links', function(req, res) {
+  if (!req.session.auth) {
+    res.redirect('login');
+  }
   Links.reset().fetch().then(function(links) {
     res.send(200, links.models);
   })
 });
 
+app.post('/logout', function (req,res) {
+  req.session.destroy(function (err) {
+    res.redirect('/')
+  });
+});
+
 app.post('/links', function(req, res) {
+  if (!req.session.auth) {
+    res.redirect('login');
+  }
   var uri = req.body.url;
 
   if (!util.isValidUrl(uri)) {
@@ -70,6 +104,64 @@ app.post('/links', function(req, res) {
 // Write your authentication routes here
 /************************************************************/
 
+app.post('/signup', function (req, res) {
+  var username = req.body.username;
+  var password = req.body.password;
+  //hit up db to see if username exists
+  //if username exists
+
+  util.usernameExists(username, function (exists) {
+    if (exists) {
+      res.redirect('login');
+    } else {
+      var newUserObj = {
+        username: username
+      };
+      util.hasher(password, function (hash) {
+        newUserObj.password = hash;
+        var newUser = new User(newUserObj);
+      //send username and salted pw to server
+        newUser.save().then(function (user) {
+          Users.add(user);
+          //redir to login
+          res.redirect('login');
+        })
+      });
+    }
+  })
+});
+
+app.post('/login', function (req, res) {
+  var username = req.body.username;
+  var password = req.body.password;
+  //hit up db
+  util.usernameExists(username, function (exists) {
+    //if username is in db
+    if (exists) {
+      //hit up db for pw
+      util.getHashPassword(username, function (hash) {
+        //if compare pw is true
+        util.compareHash(password, hash, function (match) {
+          if (match) {
+            //start new session
+            console.log('it\'s a match!')
+            req.session.auth = true;
+            res.redirect('create');
+          } else {
+            //if compare pw is false
+            console.log('it\'s not a match!')
+            //redir to login
+            res.redirect('login');
+          }
+        });
+      });
+    //if username isn't in db
+    } else {
+      //redir to login
+      res.redirect('login');
+    }
+  });
+});
 
 
 /************************************************************/
